@@ -1,5 +1,6 @@
 package com.level500.shellsaga.services;
 
+import com.level500.shellsaga.core.game.characters.Enemy;
 import com.level500.shellsaga.core.game.characters.Player;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;

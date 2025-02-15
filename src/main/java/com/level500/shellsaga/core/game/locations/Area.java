@@ -1,7 +1,10 @@
 package com.level500.shellsaga.core.game.locations;
 
+import com.level500.shellsaga.core.game.characters.Enemy;
 import jakarta.persistence.*;
 import lombok.*;
+
+import java.util.List;
 
 @Entity
 @Table(name = "areas")
@@ -21,6 +24,9 @@ public class Area {
 
     @Column(nullable = false)
     private int levelRequirement; // Level restriction for entry
+
+    @OneToMany(mappedBy = "area", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Enemy> enemies; // 🔥 List of enemies in this area
 
     @Override
     public String toString(){

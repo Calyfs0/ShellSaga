@@ -50,4 +50,5 @@ public class Enemy {
     public String toString() {
         return name + " (Level: " + level + ", HP: " + hp + ", Attack: " + attackPower + ", Defense: " + defense + ", Speed: " + speed + ")";
     }
+
 }

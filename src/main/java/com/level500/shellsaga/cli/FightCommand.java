@@ -5,6 +5,7 @@ import com.level500.shellsaga.core.game.characters.Enemy;
 import com.level500.shellsaga.core.game.characters.Player;
 import com.level500.shellsaga.core.game.combat.CombatSession;
 import com.level500.shellsaga.core.game.combat.CombatSystem;
+import com.level500.shellsaga.core.game.factories.EnemyFactory;
 import com.level500.shellsaga.core.game.locations.Area;
 import com.level500.shellsaga.infrastructure.database.AreaRepository;
 import com.level500.shellsaga.infrastructure.database.EnemyRepository;
@@ -30,13 +31,15 @@ public class FightCommand implements GameCommand{
     private final LineReader reader;
     private final AreasCommand areasCommand;
     private final AreaRepository areaRepository;
+    EnemyFactory enemyFactory;
 
-    private static final Logger logger = LoggerFactory.getLogger(ShellSagaApplication.class);
+    private static final Logger logger = LoggerFactory.getLogger(FightCommand.class);
 
     @Autowired
-    public FightCommand(PlayerService playerService, EnemyRepository enemyRepository, AreasCommand areasCommand, AreaRepository areaRepository, PlayerSessionService playerSessionService) throws Exception {
+    public FightCommand(PlayerService playerService, EnemyRepository enemyRepository, EnemyFactory enemyFactory, AreasCommand areasCommand, AreaRepository areaRepository, PlayerSessionService playerSessionService) throws Exception {
         this.playerService = playerService;
         this.enemyRepository = enemyRepository;
+        this.enemyFactory = enemyFactory;
         this.areasCommand = areasCommand;
         this.areaRepository = areaRepository;
         this.playerSessionService = playerSessionService;
@@ -73,45 +76,56 @@ public class FightCommand implements GameCommand{
         }
 
         Area selectedArea = optionalArea.get();
-        List<Enemy> enemies = enemyRepository.findByAreaAndLevelGreaterThanEqual(selectedArea, player.getLevel());
-
-        if (enemies.isEmpty()) {
+        //List<Enemy> enemies = enemyRepository.findByAreaAndLevelGreaterThanEqual(selectedArea, player.getLevel());
+        List<Enemy> enemies = enemyRepository.findByArea(selectedArea);
+        Enemy enemy = enemyFactory.createEnemy(selectedArea, player.getLevel());
+        if (enemy == null) {
             logger.info("\n🛡️ This area seems safe... No enemies found!");
             return;
         }
 
-        logger.info("\n⚔️ Choose an enemy to fight:");
-        for (int i = 0; i < enemies.size(); i++) {
-            logger.info((i + 1) + ". " + enemies.get(i).getName() + " (Level: " + enemies.get(i).getLevel() + ")");
-        }
-
-        String choiceInput = reader.readLine("\nEnter the number of the enemy you want to fight: ").trim();
-        int choice;
+//        logger.info("\n⚔️ Choose an enemy to fight:");
+//        for (int i = 0; i < enemies.size(); i++) {
+//            logger.info((i + 1) + ". " + enemies.get(i).getName() + " (Level: " + enemies.get(i).getLevel() + ")");
+//        }
+//
+//        String choiceInput = reader.readLine("\nEnter the number of the enemy you want to fight: ").trim();
+//        int choice;
+//        try {
+//            choice = Integer.parseInt(choiceInput);
+//        } catch (NumberFormatException e) {
+//            logger.info("❌ Invalid input. Please enter a valid number.");
+//            return;
+//        }
+//
+//        if (choice < 1 || choice > enemies.size()) {
+//            logger.info("❌ Invalid selection. Please try again.");
+//            return;
+//        }
+//
+//        Enemy selectedEnemy = enemies.get(choice - 1);
         try {
-            choice = Integer.parseInt(choiceInput);
-        } catch (NumberFormatException e) {
-            logger.info("❌ Invalid input. Please enter a valid number.");
-            return;
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
-
-        if (choice < 1 || choice > enemies.size()) {
-            logger.info("❌ Invalid selection. Please try again.");
-            return;
-        }
-
-        Enemy selectedEnemy = enemies.get(choice - 1);
-        logger.info("\n🔥 You have selected to fight: " + selectedEnemy.getName() + " (Level: " + selectedEnemy.getLevel() + ")");
-        CombatSession combatSession = new CombatSession(player, selectedEnemy, playerService, playerSessionService);
+        logger.info("\n🔥" + enemy.getName() + " (Level: " + enemy.getLevel() + ") has appeared.");
+        CombatSession combatSession = new CombatSession(player, enemy, playerService, playerSessionService, enemyRepository);
         combatSession.startBattle();
 
-        while(player.getHp() > 0 && selectedEnemy.getHp() > 0){
+        while(player.getBaseHp() > 0 && enemy.getHp() > 0){
             String action = reader.readLine("\nType 'attack' to strike or 'escape' to flee: ").trim().toLowerCase();
             if ("attack".equals(action)) {
                 combatSession.playerAttack();
             } else if ("escape".equals(action)) {
                 combatSession.escape();
                 break;
-            } else {
+            } else if(player.getBaseHp() <=0) {
+                playerService.respawnPlayer(player); // ✅ Move player to Terminus & restore HP
+                logger.info("🏠 You have been revived at Terminus.");
+                logger.info("❤️ Your HP and Mana have been fully restored!");
+                break;
+            }else {
                 logger.info("\n❌ Invalid action. Type 'attack' or 'escape'.");
             }
         }

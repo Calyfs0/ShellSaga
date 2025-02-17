@@ -61,6 +61,13 @@ public class PlayerService {
         playerRepository.save(player);
     }
 
+    public void respawnPlayer(Player player){
+        player.setCurrentArea("Terminus");
+        player.setReceivedDamage(0);
+        player.setXp(player.getXp() - player.getXp() / 2);
+        playerRepository.save(player);
+    }
+
 
     // ✅ Fetch STK earning rules from the database
     public List<STKEarningRule> getSTKEarningRules() {

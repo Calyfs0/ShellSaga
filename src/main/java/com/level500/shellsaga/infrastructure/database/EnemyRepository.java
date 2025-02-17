@@ -11,5 +11,6 @@ import java.util.Optional;
 @Repository
 public interface EnemyRepository extends JpaRepository<Enemy, Long> {
     List<Enemy> findByAreaAndLevelGreaterThanEqual(Area area, int playerLevel);
+    List<Enemy> findByArea(Area area);
     Optional<Enemy> findByLevelGreaterThanEqual(int level); // ✅ Fetch fallback enemies
 }

@@ -31,7 +31,7 @@ public class AreasCommand implements GameCommand {
 
     private final Map<Long, Long> playerSessions = new HashMap<>(); // ✅ Multi-player safe storage
 
-    private static final Logger logger = LoggerFactory.getLogger(ShellSagaApplication.class);
+    private static final Logger logger = LoggerFactory.getLogger(AreasCommand.class);
 
     @Autowired
     public AreasCommand(PlayerService playerService, AreaRepository areaRepository, EnemyRepository enemyRepository, PlayerSessionService playerSessionService) throws Exception {
@@ -93,11 +93,12 @@ public class AreasCommand implements GameCommand {
 
         logger.info("\n\uD83D\uDEB6 Moving to {}...", selectedArea.getName());
         if(selectedArea.getName().equalsIgnoreCase("Terminus")){
-            player.setHp(player.getMaxHp()); // ✅ Restore full HP
+            player.setReceivedDamage(0); // ✅ Restore full HP
             logger.info("\n🏠 You have returned to Terminus. Your HP is fully restored!");
         }else{
             // Fetch and display enemies with a level >= player's level
-            List<Enemy> enemies = enemyRepository.findByAreaAndLevelGreaterThanEqual(selectedArea, player.getLevel());
+            //List<Enemy> enemies = enemyRepository.findByAreaAndLevelGreaterThanEqual(selectedArea, player.getLevel());
+            List<Enemy> enemies = enemyRepository.findByArea(selectedArea);
             if (enemies.isEmpty()) {
                 logger.info("\n🛡️ This area seems safe... No enemies found!");
             } else {

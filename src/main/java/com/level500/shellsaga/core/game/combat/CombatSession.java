@@ -4,11 +4,13 @@ import com.level500.shellsaga.config.ItemConstants;
 import com.level500.shellsaga.core.game.characters.Enemy;
 import com.level500.shellsaga.core.game.characters.Player;
 import com.level500.shellsaga.core.game.entities.STKEarningRule;
+import com.level500.shellsaga.core.game.factories.EnemyFactory;
+import com.level500.shellsaga.core.game.items.Equipment;
+import com.level500.shellsaga.infrastructure.database.EnemyRepository;
 import com.level500.shellsaga.services.PlayerService;
 import com.level500.shellsaga.services.PlayerSessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.Random;
@@ -25,13 +27,15 @@ public class CombatSession {
     private boolean battleActive = true;
     private final PlayerService playerService;
     private final PlayerSessionService playerSessionService;
+    private final EnemyFactory enemyFactory;
 
 
-    public CombatSession(Player player, Enemy enemy, PlayerService playerService, PlayerSessionService playerSessionService) {
+    public CombatSession(Player player, Enemy enemy, PlayerService playerService, PlayerSessionService playerSessionService, EnemyRepository enemyRepository) {
         this.player = player;
         this.enemy = enemy;
         this.playerService = playerService;
         this.playerSessionService = playerSessionService;
+        this.enemyFactory = new EnemyFactory(enemyRepository);
     }
 
     public void startBattle(){
@@ -46,15 +50,19 @@ public class CombatSession {
                     TimeUnit.MILLISECONDS.sleep(attackDelay);
 
                     if(battleActive) {
-                        int damage = Math.max(1, enemy.getAttackPower() - player.getDefense());
-                        player.setHp(Math.max(0, player.getHp() - damage));
+                        int damage = Math.max(1, enemy.getAttackPower() - player.getBaseDefense());
+                        player.setReceivedDamage(player.getReceivedDamage() + damage);
+                        int remainingHp = player.getTotalHp() - player.getReceivedDamage();
                         logger.info("\n💥 {} attacks you! You take {} damage. (HP: {}/{})",
-                                enemy.getName(), damage, player.getHp(), player.getMaxHp());
+                                enemy.getName(), damage, remainingHp, player.getTotalHp());
 
 
-                        if (player.getHp() <= 0) {
-                            logger.info("\n💀 You have been defeated!");
+                        if (remainingHp <= 0) {
+                            logger.info("\n💀 You have been defeated by {}!", enemy.getName());
+                            logger.info("Press enter to return to hometown!");
                             battleActive = false;
+                            enemyAttackExecutor.shutdownNow();
+                            break;
                         }
                     }
 
@@ -70,12 +78,18 @@ public class CombatSession {
             logger.info("\n❌ You can't attack. The battle is over.");
             return;
         }
-
-        int damage = Math.max(1, player.getAttackPower() - enemy.getDefense());
+        boolean isCritical = random.nextInt(100) < player.getTotalCritRate();
+        double playerAttack = player.getTotalAttackPower() * (isCritical ? player.getTotalCritMultiplier() : 1);
+        int damage = (int) Math.max(1, playerAttack - enemy.getDefense());
         enemy.setHp(Math.max(0, enemy.getHp() - damage));
+        if(isCritical){
+            logger.info("\n🗡️🗡️🗡️ Critical Hit! You attack {} and deal {} damage! (Enemy HP: {}/{})",
+                    enemy.getName(), damage, enemy.getHp(), enemy.getMaxHp());
+        }else{
+            logger.info("\n🗡️ You attack {} and deal {} damage! (Enemy HP: {}/{})",
+                    enemy.getName(), damage, enemy.getHp(), enemy.getMaxHp());
+        }
 
-        logger.info("\n🗡️ You attack {} and deal {} damage! (Enemy HP: {}/{})",
-                enemy.getName(), damage, enemy.getHp(), enemy.getMaxHp());
 
         if(enemy.getHp() <= 0){
             logger.info("\n🏆 You have defeated {}!", enemy.getName());
@@ -103,6 +117,8 @@ public class CombatSession {
                 logger.info("\n💎 Bonus! You earned {} {}!", rule.getStkReward(),ItemConstants.STK);
             }
         }
+
+        handleEquipmentDrop(player,enemy);
         playerSessionService.storePlayerSession(player);
         playerService.savePlayer(player);
     }
@@ -116,4 +132,16 @@ public class CombatSession {
         battleActive = false;
         enemyAttackExecutor.shutdownNow();
     }
+
+    private void handleEquipmentDrop(Player player, Enemy enemy){
+        Random random = new Random();
+        int dropChance = random.nextInt(100);
+        if(dropChance < 25){
+            Equipment droppedItem = enemyFactory.generateEquipmentDrop(enemy);
+            player.addEquipment(droppedItem);
+
+            logger.info("🎉 You received a new item: " + droppedItem.getName() + " (Level " + droppedItem.getLevel() + ")");
+        }
+    }
+
 }

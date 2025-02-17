@@ -10,4 +10,10 @@ public class GameConstants {
     public static final int DEFAULT_ATTACK_POWER = 10;
     public static final int DEFAULT_DEFENSE = 5;
     public static final int DEFAULT_SPEED = 5;
+
+    public static final int ENHANCED_HP = 0;
+    public static final int ENHANCED_MANA = 0;
+    public static final int ENHANCED_ATTACK_POWER = 0;
+    public static final int ENHANCED_DEFENSE = 0;
+    public static final int ENHANCED_SPEED = 0;
 }

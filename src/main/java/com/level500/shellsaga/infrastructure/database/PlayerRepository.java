@@ -17,5 +17,7 @@ public interface PlayerRepository extends JpaRepository<Player, Long> {
     @Query("SELECT p FROM Player p WHERE p.id = :playerId")
     Optional<Player> findByIdWithInventory(@Param("playerId") Long playerId);
 
+    @Query("SELECT p FROM Player p LEFT JOIN FETCH p.equipmentList LEFT JOIN FETCH p.inventoryItems WHERE p.id = :id")
+    Optional<Player> findByIdWithInventoryAndEquipment(@Param("id") Long id);
 
 }

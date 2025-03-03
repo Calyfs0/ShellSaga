@@ -1,147 +1,227 @@
 package com.level500.shellsaga.core.game.combat;
 
-import com.level500.shellsaga.config.ItemConstants;
 import com.level500.shellsaga.core.game.characters.Enemy;
 import com.level500.shellsaga.core.game.characters.Player;
-import com.level500.shellsaga.core.game.entities.STKEarningRule;
 import com.level500.shellsaga.core.game.factories.EnemyFactory;
 import com.level500.shellsaga.core.game.items.Equipment;
-import com.level500.shellsaga.infrastructure.database.EnemyRepository;
+import com.level500.shellsaga.infrastructure.database.EquipmentRepository;
 import com.level500.shellsaga.services.PlayerService;
 import com.level500.shellsaga.services.PlayerSessionService;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.ExecutorService;
+import java.io.IOException;
+import java.util.Optional;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
 
 public class CombatSession {
     private static final Logger logger = LoggerFactory.getLogger(CombatSession.class);
+
     private final Player player;
     private final Enemy enemy;
-    private final Random random = new Random();
-    private final ExecutorService enemyAttackExecutor = Executors.newSingleThreadExecutor();
-    private boolean battleActive = true;
     private final PlayerService playerService;
     private final PlayerSessionService playerSessionService;
     private final EnemyFactory enemyFactory;
+    private final EquipmentRepository equipmentRepository;
+    private final LineReader reader;
+    private volatile boolean battleOngoing;
+    private final ScheduledExecutorService enemyAttackExecutor;
 
-
-    public CombatSession(Player player, Enemy enemy, PlayerService playerService, PlayerSessionService playerSessionService, EnemyRepository enemyRepository) {
+    public CombatSession(Player player, Enemy enemy, PlayerService playerService,
+                         PlayerSessionService playerSessionService, EnemyFactory enemyFactory,
+                         EquipmentRepository equipmentRepository) throws IOException {
         this.player = player;
         this.enemy = enemy;
         this.playerService = playerService;
         this.playerSessionService = playerSessionService;
-        this.enemyFactory = new EnemyFactory(enemyRepository);
+        this.enemyFactory = enemyFactory;
+        this.equipmentRepository = equipmentRepository;
+        this.enemyAttackExecutor = Executors.newSingleThreadScheduledExecutor();
+        Terminal terminal = TerminalBuilder.builder().system(true).build();
+        this.reader = LineReaderBuilder.builder().terminal(terminal).build();
+        this.battleOngoing = true;
     }
 
-    public void startBattle(){
-        logger.info("\n⚔️ You are now fighting: {} (Level {})", enemy.getName(), enemy.getLevel());
+    public void startAutoBattle() {
+        logger.info("\n⚔️ Battle Started: {} vs {}", player.getName(), enemy.getName());
 
-        //Start enemy attack thread
-        enemyAttackExecutor.submit(() ->{
-            while(battleActive){
-                try{
-                    int attackDelay = 2000 - (enemy.getSpeed() * 100);
-                    attackDelay = Math.max(500, attackDelay); //Ensure minimum attack delay
-                    TimeUnit.MILLISECONDS.sleep(attackDelay);
+        ScheduledExecutorService executorService = Executors.newScheduledThreadPool(2);
 
-                    if(battleActive) {
-                        int damage = Math.max(1, enemy.getAttackPower() - player.getBaseDefense());
-                        player.setReceivedDamage(player.getReceivedDamage() + damage);
-                        int remainingHp = player.getTotalHp() - player.getReceivedDamage();
-                        logger.info("\n💥 {} attacks you! You take {} damage. (HP: {}/{})",
-                                enemy.getName(), damage, remainingHp, player.getTotalHp());
+        Runnable playerAttackTask = () -> {
+            if (player.getTotalRemainingHp() > 0 && enemy.getHp() > 0) {
+                playerAttack();
+                if (enemy.getHp() <= 0) {
+                    executorService.shutdown();
+                }
+            }
+        };
 
+        Runnable enemyAttackTask = () -> {
+            if (player.getTotalRemainingHp() > 0 && enemy.getHp() > 0) {
+                enemyAttack();
+                if (player.getTotalRemainingHp() <= 0) {
+                    playerService.respawnPlayer(player);
+                    executorService.shutdown();
+                }
+            }
+        };
 
-                        if (remainingHp <= 0) {
-                            logger.info("\n💀 You have been defeated by {}!", enemy.getName());
-                            logger.info("Press enter to return to hometown!");
-                            battleActive = false;
-                            enemyAttackExecutor.shutdownNow();
-                            break;
-                        }
+        long playerAttackInterval = (long) (5000 / player.getTotalSpeed());
+        long enemyAttackInterval = (long) (5000 / enemy.getSpeed());
+
+        executorService.scheduleAtFixedRate(playerAttackTask, 0, playerAttackInterval, TimeUnit.MILLISECONDS);
+        executorService.scheduleAtFixedRate(enemyAttackTask, 0, enemyAttackInterval, TimeUnit.MILLISECONDS);
+
+        try {
+            executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        playerService.savePlayer(player);
+        playerSessionService.updateSession(player);
+    }
+
+    public void startBattle() {
+        logger.info("\n⚔️ Battle Started: {} vs {}", player.getName(), enemy.getName());
+
+        // Start enemy attack thread
+        startEnemyAttacks();
+
+        // ✅ Start a separate thread for player input
+
+        while (battleOngoing && player.getTotalRemainingHp() > 0 && enemy.getHp() > 0) {
+            try {
+                String action = reader.readLine("\nType 'attack' to strike or 'escape' to flee: ").trim().toLowerCase();
+
+                if ("attack".equals(action)) {
+                    synchronized (this) {  // Prevent simultaneous actions
+                        playerAttack();
                     }
+                } else if ("escape".equals(action)) {
+                    logger.info("\n🏃 You escaped the battle!");
+                    battleOngoing = false;
+                    enemyAttackExecutor.shutdown();
+                    return;
+                } else {
+                    logger.info("\n❌ Invalid action. Type 'attack' or 'escape'.");
+                }
+            } catch (Exception e) {
+                logger.error("Error reading input", e);
+            }
+        }
 
-                }catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
+
+    }
+
+    private void startEnemyAttacks() {
+        enemyAttackExecutor.scheduleAtFixedRate(() -> {
+            if (battleOngoing && player.getTotalRemainingHp() > 0 && enemy.getHp() > 0) {
+                synchronized (this) {  // Prevent simultaneous actions
+                    enemyAttack();
+                }
+            }
+        }, (long) (enemy.getSpeed() * 1000), (long) (enemy.getSpeed() * 1000), TimeUnit.MILLISECONDS);
+    }
+
+    private void listenForPlayerCommands() {
+        Thread playerInputThread = new Thread(() -> {
+            while (battleOngoing && player.getTotalRemainingHp() > 0 && enemy.getHp() > 0) {
+                String action = "";
+                try {
+                    action = reader.readLine("\nType 'attack' to strike or 'escape' to flee: ").trim().toLowerCase();
+                } catch (Exception e) {
+                    logger.error("Error reading input", e);
+                }
+
+                if ("attack".equals(action)) {
+                    playerAttack();
+                } else if ("escape".equals(action)) {
+                    logger.info("\n🏃 You escaped the battle!");
+                    battleOngoing = false;
+                    enemyAttackExecutor.shutdown();
+                    return;
+                } else {
+                    logger.info("\n❌ Invalid action. Type 'attack' or 'escape'.");
+                }
             }
         });
+        playerInputThread.start();
     }
 
-    public void playerAttack(){
-        if(!battleActive){
-            logger.info("\n❌ You can't attack. The battle is over.");
-            return;
-        }
-        boolean isCritical = random.nextInt(100) < player.getTotalCritRate();
-        double playerAttack = player.getTotalAttackPower() * (isCritical ? player.getTotalCritMultiplier() : 1);
-        int damage = (int) Math.max(1, playerAttack - enemy.getDefense());
-        enemy.setHp(Math.max(0, enemy.getHp() - damage));
-        if(isCritical){
-            logger.info("\n🗡️🗡️🗡️ Critical Hit! You attack {} and deal {} damage! (Enemy HP: {}/{})",
-                    enemy.getName(), damage, enemy.getHp(), enemy.getMaxHp());
-        }else{
-            logger.info("\n🗡️ You attack {} and deal {} damage! (Enemy HP: {}/{})",
-                    enemy.getName(), damage, enemy.getHp(), enemy.getMaxHp());
+    private void playerAttack() {
+        double criticalRoll = Math.random() * 100;
+        boolean isCriticalHit = criticalRoll <= player.getTotalCritRate();
+        int damage = player.getTotalAttackPower() - enemy.getDefense();
+
+        if (isCriticalHit) {
+            damage += (int)((player.getTotalCritMultiplier()/100) * damage);
+            logger.info("💥 Critical Hit!");
         }
 
+        if (damage < 1) damage = 1;
+        enemy.takeDamage(damage);
+        logger.info("⚡ {} attacked {} for {} damage!", player.getName(), enemy.getName(), damage);
 
-        if(enemy.getHp() <= 0){
-            logger.info("\n🏆 You have defeated {}!", enemy.getName());
-            rewardPlayer(); // Grand rewards to the player
-            battleActive = false;
-            enemyAttackExecutor.shutdownNow();
+        if (enemy.getHp() <= 0) {
+            logger.info("\n🎉 Victory! {} defeated {}!", player.getName(), enemy.getName());
+            handleVictory();
+            battleOngoing = false;
+            enemyAttackExecutor.shutdown();
         }
     }
 
-    public void rewardPlayer(){
-        int xpEarned = enemy.getLevel() * 10;
-        int goldEarned = enemy.getLevel() * 5;
+    private void enemyAttack() {
+        int damage = enemy.getAttackPower() - player.getTotalDefense();
+        if (damage < 1) damage = 1;
+        player.setReceivedDamage(damage);
+        logger.info("\n💥 {} attacked {} for {} damage! Player HP left: {}", enemy.getName(), player.getName(), damage, player.getTotalRemainingHp());
 
-        player.gainXp(xpEarned);
-        player.addItem(ItemConstants.GOLD, goldEarned);
-
-        logger.info("\n🎉 You gained {} {} and {} {}", xpEarned,ItemConstants.EXP, goldEarned,ItemConstants.GOLD);
-
-        // ✅ Check for STK drops (Based on rules stored in DB)
-
-        List<STKEarningRule> stkEarningRules = playerService.getSTKEarningRules();
-        for(STKEarningRule rule : stkEarningRules){
-            if(rule.getCondition().equalsIgnoreCase("Defeat Rare Enemy") && enemy.isRare()){
-                player.addItem(ItemConstants.STK, rule.getStkReward());
-                logger.info("\n💎 Bonus! You earned {} {}!", rule.getStkReward(),ItemConstants.STK);
-            }
+        if (player.getTotalRemainingHp() <= 0) {
+            logger.info("\n💀 You have been defeated by {}!", enemy.getName());
+            battleOngoing = false;
+            enemyAttackExecutor.shutdown();
+            playerService.respawnPlayer(player);
+            logger.info("🏠 You have been revived at Terminus.");
+            logger.info("❤️ Your HP and Mana have been fully restored!");
+            playerSessionService.updateSession(player);
         }
+    }
 
-        handleEquipmentDrop(player,enemy);
-        playerSessionService.storePlayerSession(player);
+    private void handleVictory() {
+        int xpGained = enemy.getXpReward();
+        int goldGained = enemy.getGoldReward();
+        player.gainXp(xpGained);
+        player.addItem("Gold", goldGained);
+        logger.info("\n🎖️ You gained {} XP and {} Gold!", xpGained, goldGained);
         playerService.savePlayer(player);
     }
 
-    public void escape() {
-        if (!battleActive) {
-            logger.info("\n❌ You can't escape. The battle is over.");
-            return;
-        }
-        logger.info("\n🏃 You successfully escaped from {}!", enemy.getName());
-        battleActive = false;
-        enemyAttackExecutor.shutdownNow();
+    // ✅ Update Player Session (Fixing Redis Issues)
+    public void updateSession() {
+        playerSessionService.updateSession(player);
+        logger.info("\n🔄 Session Updated: {}'s stats saved!", player.getName());
     }
 
-    private void handleEquipmentDrop(Player player, Enemy enemy){
-        Random random = new Random();
-        int dropChance = random.nextInt(100);
-        if(dropChance < 25){
-            Equipment droppedItem = enemyFactory.generateEquipmentDrop(enemy);
-            player.addEquipment(droppedItem);
-
-            logger.info("🎉 You received a new item: " + droppedItem.getName() + " (Level " + droppedItem.getLevel() + ")");
-        }
-    }
-
+//    public void playerAttack() {
+//        int damage = player.getTotalAttackPower() - enemy.getDefense();
+//        if (damage < 1) damage = 1;
+//        enemy.takeDamage(damage);
+//        logger.info("⚡ {} attacked {} for {} damage!", player.getName(), enemy.getName(), damage);
+//    }
+//
+//    public void enemyAttack() {
+//        //int damage = enemy.getAttackPower() - player.getTotalDefense();
+//        int damage = 50;
+//        if (damage < 1) damage = 1;
+//        player.setReceivedDamage(damage);
+//        logger.info("\n💥 {} attacked {} for {} damage! Player hp left {}", enemy.getName(), player.getName(), damage, player.getTotalHp());
+//    }
 }

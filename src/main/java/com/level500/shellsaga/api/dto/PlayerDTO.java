@@ -1,6 +1,5 @@
 package com.level500.shellsaga.api.dto;
 
-import com.level500.shellsaga.core.game.characters.Playstyle;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,6 +18,6 @@ public class PlayerDTO {
     private String name;
 
     @NotNull(message = "Playstyle is required.")
-    private Playstyle playstyle;
+    private String playStyle;
 
 }

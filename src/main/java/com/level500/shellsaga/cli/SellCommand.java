@@ -1,6 +1,8 @@
 package com.level500.shellsaga.cli;
 
 import com.level500.shellsaga.core.game.characters.Player;
+import com.level500.shellsaga.core.game.items.Equipment;
+import com.level500.shellsaga.core.game.items.InventoryItem;
 import com.level500.shellsaga.services.PlayerSessionService;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -12,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.Map;
 import java.util.Optional;
 
 @Component
@@ -20,11 +21,6 @@ public class SellCommand implements GameCommand {
     private final PlayerSessionService playerSessionService;
     private static final Logger logger = LoggerFactory.getLogger(SellCommand.class);
     private final LineReader reader;
-    private static final Map<String, Integer> sellPrices = Map.of(
-            "Health Potion", 10,
-            "Mana Potion", 15,
-            "Steel Sword", 100
-    );
 
     @Autowired
     public SellCommand(PlayerSessionService playerSessionService) throws IOException {
@@ -36,33 +32,76 @@ public class SellCommand implements GameCommand {
     @Override
     public void execute() {
         Optional<Player> optionalPlayer = playerSessionService.getPlayerSession();
-        optionalPlayer.ifPresent(Player::showInventory);
+        if (optionalPlayer.isEmpty()) {
+            logger.info("❌ No active player session found.");
+            return;
+        }
 
         Player player = optionalPlayer.get();
+        player.displayInventoryAndEquipment(); // ✅ Displays both inventory & unequipped gear
 
         String itemName = reader.readLine("\nEnter item name to sell: ").trim();
-        if (!player.getInventory().containsKey(itemName)) {
-            logger.info("❌ You don't have that item.");
+
+        // ✅ Check if the item exists in inventory
+        Optional<InventoryItem> itemToSell = player.getInventory().stream()
+                .filter(item -> item.getItemName().equalsIgnoreCase(itemName))
+                .findFirst();
+
+        if (itemToSell.isPresent()) {
+            InventoryItem item = itemToSell.get();
+            int maxQuantity = item.getQuantity();
+            int sellPrice = getSellPrice(itemName, player);
+
+            String quantityInput = reader.readLine("Enter quantity to sell (1-" + maxQuantity + "): ").trim();
+            int quantity;
+            try {
+                quantity = Integer.parseInt(quantityInput);
+            } catch (NumberFormatException e) {
+                logger.info("❌ Invalid input. Please enter a number.");
+                return;
+            }
+
+            if (quantity < 1 || quantity > maxQuantity) {
+                logger.info("❌ Invalid quantity.");
+                return;
+            }
+
+            if (quantity == maxQuantity) {
+                player.getInventory().remove(item); // ✅ Remove item completely if selling all
+            } else {
+                item.setQuantity(item.getQuantity() - quantity); // ✅ Reduce quantity
+            }
+
+            player.addItem("Gold", quantity * sellPrice);
+            logger.info("💰 Sold {} x{} for {} Gold!", itemName, quantity, quantity * sellPrice);
+            playerSessionService.updateSession(player);
             return;
         }
 
-        int maxQuantity = player.getInventory().get(itemName);
-        int sellPrice = sellPrices.getOrDefault(itemName, 5); // Default sell price = 5 gold
-        String quantityInput = reader.readLine("Enter quantity to sell (1-{}): ", (char) (1 - maxQuantity)).trim();
+        // ✅ Check if the item is an unequipped piece of equipment
+        Optional<Equipment> equipmentToSell = player.getEquipment().stream()
+                .filter(e -> e.getName().equalsIgnoreCase(itemName))
+                .findFirst();
 
-        int quantity;
-        try {
-            quantity = Integer.parseInt(quantityInput);
-        } catch (NumberFormatException e) {
-            logger.info("❌ Invalid input. Please enter a number.");
+        if (equipmentToSell.isPresent()) {
+            Equipment equipment = equipmentToSell.get();
+            double sellPrice = equipment.getSellPrice(); // ✅ Selling price = 50% of original price
+            player.addItem("Gold", (int) sellPrice);
+            player.removeEquipment(equipment);
+            logger.info("💰 Sold unequipped gear: {} for {} Gold!", itemName, (int) sellPrice);
+            playerSessionService.updateSession(player);
             return;
         }
 
-        if (quantity < 1 || quantity > maxQuantity) {
-            logger.info("❌ Invalid quantity.");
-            return;
-        }
-
-        player.sellItem(itemName, quantity, sellPrice);
+        logger.info("❌ You don't have {} in your inventory or unequipped equipment.", itemName);
     }
+
+    private int getSellPrice(String itemName, Player player) {
+        return player.getInventory().stream()
+                .filter(item -> item.getItemName().equalsIgnoreCase(itemName))
+                .map(InventoryItem::getSellPrice) // ✅ Retrieves sell price dynamically
+                .findFirst()
+                .orElse(5); // Default price if not found
+    }
+
 }

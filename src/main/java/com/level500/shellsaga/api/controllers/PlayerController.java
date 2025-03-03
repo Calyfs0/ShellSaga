@@ -23,14 +23,14 @@ public class PlayerController {
 
     @PostMapping("/create")
     public ResponseEntity<PlayerDTO> createPlayer(@Valid @RequestBody PlayerDTO playerDTO) {
-        Player newPlayer = playerService.createPlayer(playerDTO.getName(), playerDTO.getPlaystyle());
-        return ResponseEntity.ok(new PlayerDTO(newPlayer.getName(), newPlayer.getPlayStyle()));
+        Player newPlayer = playerService.createPlayer(playerDTO.getName(), playerDTO.getPlayStyle());
+        return ResponseEntity.ok(new PlayerDTO(newPlayer.getName(), newPlayer.getGameClass().getClassName()));
     }
 
     @GetMapping("/all")
     public ResponseEntity<List<PlayerDTO>> getAllPlayers() {
         List<PlayerDTO> players = playerService.getAllPlayers(Pageable.ofSize(10)).stream()
-                .map(p -> new PlayerDTO(p.getName(), p.getPlayStyle()))
+                .map(p -> new PlayerDTO(p.getName(), p.getGameClass().getClassName()))
                 .toList();
         return ResponseEntity.ok(players);
     }

@@ -1,6 +1,8 @@
 package com.level500.shellsaga.cli;
 
 import com.level500.shellsaga.core.game.characters.Player;
+import com.level500.shellsaga.core.game.items.Equipment;
+import com.level500.shellsaga.core.game.items.InventoryItem;
 import com.level500.shellsaga.services.PlayerSessionService;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -15,7 +17,7 @@ import java.io.IOException;
 import java.util.Optional;
 
 @Component
-public class DropCommand implements GameCommand{
+public class DropCommand implements GameCommand {
     private static final Logger logger = LoggerFactory.getLogger(DropCommand.class);
     private final PlayerSessionService playerSessionService;
     private final LineReader reader;
@@ -30,34 +32,62 @@ public class DropCommand implements GameCommand{
     @Override
     public void execute() {
         Optional<Player> optionalPlayer = playerSessionService.getPlayerSession();
-        optionalPlayer.ifPresent(Player::showInventory);
+        if (optionalPlayer.isEmpty()) {
+            logger.info("❌ No active player session found.");
+            return;
+        }
 
         Player player = optionalPlayer.get();
-
-
+        player.displayInventoryAndEquipment(); // ✅ Displays both inventory & unequipped gear
 
         String itemName = reader.readLine("\nEnter item name to drop: ").trim();
-        if (!player.getInventory().containsKey(itemName)) {
-            logger.info("❌ You don't have that item.");
+
+        // ✅ Check if item is in inventory
+        Optional<InventoryItem> itemToDrop = player.getInventory().stream()
+                .filter(item -> item.getItemName().equalsIgnoreCase(itemName))
+                .findFirst();
+
+        if (itemToDrop.isPresent()) {
+            InventoryItem item = itemToDrop.get();
+            int maxQuantity = item.getQuantity();
+
+            String quantityInput = reader.readLine("Enter quantity to drop (1-" + maxQuantity + "): ").trim();
+            int quantity;
+            try {
+                quantity = Integer.parseInt(quantityInput);
+            } catch (NumberFormatException e) {
+                logger.info("❌ Invalid input. Please enter a number.");
+                return;
+            }
+
+            if (quantity < 1 || quantity > maxQuantity) {
+                logger.info("❌ Invalid quantity.");
+                return;
+            }
+
+            if (quantity == maxQuantity) {
+                player.getInventory().remove(item); // ✅ Remove item completely if dropping all
+            } else {
+                item.setQuantity(item.getQuantity() - quantity); // ✅ Reduce quantity
+            }
+
+            logger.info("🗑️ Dropped {} x{}", itemName, quantity);
+            playerSessionService.updateSession(player);
             return;
         }
 
-        int maxQuantity = player.getInventory().get(itemName);
-        String quantityInput = reader.readLine("Enter quantity to drop (1-{}): ", (char) (1 - maxQuantity)).trim();
+        // ✅ Check if the item is an unequipped piece of equipment
+        Optional<Equipment> equipmentToDrop = player.getEquipment().stream()
+                .filter(e -> e.getName().equalsIgnoreCase(itemName))
+                .findFirst();
 
-        int quantity;
-        try {
-            quantity = Integer.parseInt(quantityInput);
-        } catch (NumberFormatException e) {
-            logger.info("❌ Invalid input. Please enter a number.");
+        if (equipmentToDrop.isPresent()) {
+            player.removeEquipment(equipmentToDrop.get());
+            logger.info("🗑️ Dropped unequipped gear: {}", itemName);
+            playerSessionService.updateSession(player);
             return;
         }
 
-        if (quantity < 1 || quantity > maxQuantity) {
-            logger.info("❌ Invalid quantity.");
-            return;
-        }
-
-        player.dropItem(itemName, quantity);
+        logger.info("❌ You don't have {} in your inventory or unequipped equipment.", itemName);
     }
 }

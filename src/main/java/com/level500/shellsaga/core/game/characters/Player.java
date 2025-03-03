@@ -1,302 +1,349 @@
 package com.level500.shellsaga.core.game.characters;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.level500.shellsaga.ShellSagaApplication;
-import com.level500.shellsaga.config.GameConstants;
-import com.level500.shellsaga.converters.EquipmentConverter;
-import com.level500.shellsaga.core.game.entities.enums.EquipmentSlot;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.level500.shellsaga.core.game.entities.GameClasses;
 import com.level500.shellsaga.core.game.items.Equipment;
-import com.level500.shellsaga.core.game.items.EquipmentStats;
+import com.level500.shellsaga.core.game.items.InventoryItem;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.*;
 
 @Entity
-@Table(name="players")
+@Table(name = "players")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class Player {
-
-    private static final Logger logger = LoggerFactory.getLogger(ShellSagaApplication.class);
+    @Setter
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Setter
     private String name;
+    @Setter
     private int level;
+    @Setter
+    private int experience;
 
     // 🔥 Base stats (before equipment bonuses)
+
     private int baseHp;
+    @Setter
     private int baseMana;
+    @Setter
     private int baseAttackPower;
+    @Setter
     private int baseDefense;
     private int baseSpeed;
-    private double baseCritRate;
-    private double baseCritMultiplier;
+    @Setter
+    private double baseCriticalRate;
+    @Setter
+    private double baseCriticalMultiplier;
 
     // 🔥 Enhanced stats (from equipment bonuses)
-
+    @Getter
+    @Setter
     private int enhancedHp;
+    @Getter
+    @Setter
     private int enhancedMana;
+    @Getter
+    @Setter
     private int enhancedAttackPower;
+    @Getter
+    @Setter
     private int enhancedDefense;
     private int enhancedSpeed;
-    private double enhancedCritRate;
-    private double enhancedCritMultiplier;
-    private int receivedDamage = 0; // ✅ Damage received in combat
+    @Getter
+    @Setter
+    private double enhancedCriticalRate;
+    @Getter
+    @Setter
+    private double enhancedCriticalMultiplier;
 
+    private int receivedDamage = 0;
 
-    private int xp = 0;  // ✅ XP Tracking
-    // ✅ Gold & STK Management
+    @ManyToOne
+    @JoinColumn(name = "game_class_id")
+    @JsonManagedReference
+    private GameClasses gameClass;
 
-
-    @Enumerated(EnumType.STRING)
-    private Playstyle playStyle;
-
+    // ✅ Set Current Area
+    // ✅ Get Current Area
+    // ✅ Track Player's Current Area
+    @Setter
+    @Getter
     @Column(nullable = false)
-    private String currentArea = "Starting Town"; // 🔥 Default starting location
-
-    // ✅ Returns Maximum HP based on level
-    @JsonIgnore // ✅ Prevents Redis from serializing `getMaxHp`
-
-
-    public int getCurrentHp(){
-        return getTotalHp() - this.receivedDamage;
-    }
-
-    // ✅ XP Needed for Next Level
-    public int calculateXPForNextLevel() {
-        return (this.level+1) * 100;
-    }
-
-    // ✅ Player Gains XP and Levels Up
-    public void gainXp(int amount) {
-        this.xp += amount;
-        if (this.xp >= calculateXPForNextLevel()) {
-            levelUp();
-        }
-    }
-    public void levelUp(){
-        this.level++;
-        this.baseHp += 10;
-        this.baseMana += 5;
-        this.xp = 0;
-        this.receivedDamage = 0;
-        logger.info("🎉 {} leveled up to Level {}!", name, level);
-    }
+    private String currentArea = "Terminus";
 
     @Getter
-    @JdbcTypeCode(SqlTypes.JSON) // ✅ Supports JSON type for PostgreSQL
-    @Column(columnDefinition = "jsonb") // ✅ Stores inventory as JSON in PostgreSQL
-    private Map<String, Integer> inventory = new HashMap<>();
-
-    public void showInventory(){
-        if(inventory.isEmpty()){
-            logger.info("🎒 Your inventory is empty.");
-            return;
-        }
-        logger.info("\n🎒 Inventory:");
-        inventory.forEach((item, quantity) -> logger.info("🔹 {} x{}", item, quantity));
-    }
-
-    public void dropItem(String item, int quantity){
-        if(!inventory.containsKey(item)){
-            logger.info("🚫 You don't have any {} in your inventory.", item);
-            return;
-        }
-        int currentQuantity = inventory.get(item);
-        if(quantity >= currentQuantity){
-            logger.info("🚫 You don't have enough {} in your inventory.", item);
-            return;
-        }
-        inventory.put(item, currentQuantity - quantity);
-        logger.info("🗑️ Dropped {} x{} from your inventory.", item, quantity);
-    }
-
-    public void sellItem(String item, int quantity, int sellPrice) {
-        if (!inventory.containsKey(item)) {
-            logger.info("❌ You don't have any {} to sell.", item);
-            return;
-        }
-
-        int currentQuantity = inventory.get(item);
-        int totalGoldEarned = quantity * sellPrice;
-
-        if (quantity >= currentQuantity) {
-            inventory.remove(item); // ✅ Remove item if selling all
-            logger.info("💰 Sold all {} for {} gold!", item, totalGoldEarned);
-        } else {
-            inventory.put(item, currentQuantity - quantity);
-            logger.info("💰 Sold {} ({} remaining) for {} gold.", item, quantity, inventory.get(item), totalGoldEarned);
-        }
-
-        // ✅ Increase player's gold
-        addItem("Gold", totalGoldEarned);
-    }
+    @OneToMany(mappedBy = "player", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @JsonBackReference
+    private Set<Equipment> equipmentList = new HashSet<>(); // ✅ Changed from List to Set
 
     @Getter
     @Setter
-    @Column(columnDefinition = "jsonb") // ✅ Stores equipment as JSONB
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Convert(converter = EquipmentConverter.class)
-    private List<Equipment> equipment = new ArrayList<>(); // ✅ Store all owned equipment
+    @OneToMany(mappedBy = "player", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    private Set<InventoryItem> inventoryItems = new HashSet<>(); // ✅ Changed from List to Set
 
-    public void addEquipment(Equipment item) {
-        equipment.add(item);
-    }
-    public void removeEquipment(Equipment item) {
-        equipment.remove(item);
+    public int getXp() {
+        return experience; // ✅ XP is stored in `experience` field
     }
 
-    public Optional<Equipment> getEquippedItem(EquipmentSlot slot) {
-        return equipment.stream().filter(e -> e.getSlot() == slot && e.isEquipped()).findFirst();
+    public void gainXp(int xp) {
+        this.experience += xp;
+
+        // ✅ Check for Level Up, but stop at level 100
+        checkLevelUp();
     }
 
-    public void equipItem(Equipment item) {
-        EquipmentSlot slot = item.getSlot();
+    private void checkLevelUp() {
+        while (this.experience >= calculateXPForNextLevel() && this.level < 100) {
+            this.experience -= calculateXPForNextLevel();
+            this.level++;
+            System.out.println("\n🔼 Level Up! " + this.name + " is now Level " + this.level + "!");
+        }
 
-        //Check if an item is already equipped in this slot
-        getEquippedItem(slot).ifPresent(existingItem -> {
-            logger.info("Replacing {} with {}", existingItem.getName(), item.getName());
-            unEquipItem(slot);
-        });
-        // ✅ Unequip any existing item in that slot
-        getEquippedItem(item.getSlot()).ifPresent(existing -> existing.setEquipped(false));
-
-        // ✅ Equip new item
-        item.setEquipped(true);
-        applyEquipmentStats(item);
-        // ✅ Recalculate stats
-        //recalculateStats();
+        // ✅ Prevent XP from increasing after level 100
+        if (this.level >= 100) {
+            this.experience = 0;
+        }
     }
 
-    private void applyEquipmentStats(Equipment item) {
-        EquipmentStats stats = item.getStats();
-        this.enhancedAttackPower += stats.getAttack();
-        this.enhancedDefense += stats.getDefense();
-        this.enhancedSpeed += stats.getSpeed();
-        this.enhancedHp += stats.getHpIncrease();
-        this.enhancedMana += stats.getManaIncrease();
-        this.enhancedCritRate += stats.getCritRate();
-        this.enhancedCritMultiplier += stats.getCritMultiplier();
+    public void setXp(int xp) {
+        this.experience = xp; // ✅ Updates XP properly
     }
 
-    private void removeEquipmentStats(Equipment item) {
-        EquipmentStats stats = item.getStats();
-        this.enhancedAttackPower -= stats.getAttack();
-        this.enhancedDefense -= stats.getDefense();
-        this.enhancedSpeed -= stats.getSpeed();
-        this.enhancedHp -= stats.getHpIncrease();
-        this.enhancedMana -= stats.getManaIncrease();
-        this.enhancedCritRate -= stats.getCritRate();
-        this.enhancedCritMultiplier -= stats.getCritMultiplier();
-    }
-
-    public void unEquipItem(EquipmentSlot slot) {
-        getEquippedItem(slot).ifPresent(existingItem -> {
-            existingItem.setEquipped(false);
-            removeEquipmentStats(existingItem);
-            logger.info("Unequipped: {}", existingItem.getName());
-        });
-
-        // ✅ Recalculate stats after unequipping
-        //recalculateStats();
-    }
-    public void addItem(String item, int quantity) {
-        inventory.put(item, inventory.getOrDefault(item, 0) + quantity);
-    }
-
-    public boolean hasItem(String item) {
-        return inventory.containsKey(item);
-    }
-
-    public int getItemQuantity(String item) {
-        return inventory.getOrDefault(item, 0);
-    }
-
-    public void removeItem(String item, int quantity) {
-        inventory.put(item, Math.max(inventory.getOrDefault(item, 0) - quantity, 0));
-    }
-
-    public static Player createNewPlayer(String name, Playstyle playstyle) {
-        return Player.builder()
-                .name(name)
-                .level(1)
-                .baseHp(GameConstants.DEFAULT_HP)
-                .baseMana(GameConstants.DEFAULT_MANA)
-                .baseAttackPower(GameConstants.DEFAULT_ATTACK_POWER)
-                .baseDefense(GameConstants.DEFAULT_DEFENSE)
-                .baseSpeed(GameConstants.DEFAULT_SPEED)
-                .baseCritRate(0)
-                .baseCritMultiplier(0)
-                .enhancedHp(0)
-                .enhancedMana(0)
-                .enhancedAttackPower(0)
-                .enhancedDefense(0)
-                .enhancedSpeed(0)
-                .enhancedCritRate(0)
-                .enhancedCritMultiplier(0)
-                .playStyle(playstyle)
-                .currentArea("Terminus")
-                .inventory(new HashMap<>())
-                .equipment(new ArrayList<>())
-                .build();
-    }
-
-    @Transient
+    // ✅ Get Total HP
     @JsonIgnore
     public int getTotalHp() {
-        return this.baseHp + this.enhancedHp;
+        return Math.max(0, baseHp + enhancedHp);
     }
-    @Transient
+
+    @JsonIgnore
+    public int getTotalRemainingHp(){
+        return getTotalHp() - receivedDamage;
+    }
+
+    // ✅ Get Total Mana
     @JsonIgnore
     public int getTotalMana() {
-        return this.baseMana + this.enhancedMana;
+        return baseMana + enhancedMana;
     }
-    @Transient
+
+    // ✅ Get Total Attack Power
     @JsonIgnore
     public int getTotalAttackPower() {
-        return this.baseAttackPower + this.enhancedAttackPower;
+        return baseAttackPower + enhancedAttackPower;
     }
 
-    @Transient
+    // ✅ Get Total Defense
     @JsonIgnore
     public int getTotalDefense() {
-        return this.baseDefense + this.enhancedDefense;
+        return baseDefense + enhancedDefense;
     }
 
-    @Transient
+    // ✅ Get Total Speed
     @JsonIgnore
     public int getTotalSpeed() {
-        return this.baseSpeed + this.enhancedSpeed;
+        return baseSpeed + enhancedSpeed;
     }
-
-    @Transient
     @JsonIgnore
     public double getTotalCritRate() {
-        return this.baseCritRate + this.enhancedCritRate;
+        return baseCriticalRate + enhancedCriticalRate; // ✅ Base + bonus from equipment
     }
 
-    @Transient
     @JsonIgnore
     public double getTotalCritMultiplier() {
-        return this.baseCritMultiplier + this.enhancedCritMultiplier;
+        return baseCriticalMultiplier + enhancedCriticalMultiplier;
     }
-
 
     @Override
     public String toString() {
-        return "Player{Name='" + name + "', Level=" + level + ", HP=" + (getTotalHp()-getReceivedDamage()) + ", MP=" + getTotalMana() +
-                ", Attack Power=" + getTotalAttackPower() + ", Defense=" + getTotalDefense() +
-                ", Speed=" + getTotalSpeed() +
-                ", Critical Rate=" + getTotalCritRate() +
-                ", Critical Rate Multiplier=" + getTotalCritMultiplier()+ ", Current Area='" + currentArea + "'}";
+        return "Player{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", level=" + level +
+                ", experience=" + experience +
+                ", totalHp=" + getTotalHp() +
+                ", totalMana=" + getTotalMana() +
+                ", totalAttackPower=" + getTotalAttackPower() +
+                ", totalDefense=" + getTotalDefense() +
+                ", totalSpeed=" + getTotalSpeed() +
+                ", currentArea='" + getCurrentArea() + "'" +
+                '}';
+    }
+
+
+    public void addItem(String itemName, int quantity) {
+        Optional<InventoryItem> existingItem = inventoryItems.stream()
+                .filter(item -> item.getItemName().equalsIgnoreCase(itemName))
+                .findFirst();
+
+        if (existingItem.isPresent()) {
+            System.out.println(existingItem.get().getItemName() + " is already present in inventory with value " + existingItem.get().getQuantity());
+            existingItem.get().setQuantity(existingItem.get().getQuantity() + quantity);
+        } else {
+            InventoryItem newItem = new InventoryItem();
+            newItem.setPlayer(this);
+            newItem.setItemName(itemName);
+            newItem.setQuantity(quantity);
+            inventoryItems.add(newItem);
+        }
+    }
+
+    public void removeItem(String itemName) {
+        inventoryItems.removeIf(item -> item.getItemName().equalsIgnoreCase(itemName));
+    }
+
+    public Set<InventoryItem> getInventory() {
+        return inventoryItems; // ✅ Converts Set to List when accessing inventory
+    }
+
+    public void setInventory(Set<InventoryItem> inventory) {
+        this.inventoryItems = inventory; // ✅ Correctly assigns the deserialized inventory
+    }
+
+
+    public boolean hasItem(String itemName) {
+        return inventoryItems.stream().anyMatch(item -> item.getItemName().equalsIgnoreCase(itemName));
+    }
+
+    public void displayInventory() {
+        System.out.println("\n📦 Inventory:");
+        if (inventoryItems.isEmpty()) {
+            System.out.println(" - Empty");
+        } else {
+            inventoryItems.forEach(item ->
+                    System.out.println(" - " + item.getItemName() + " x" + item.getQuantity()));
+        }
+    }
+
+    public void displayInventoryAndEquipment() {
+        System.out.println("\n📦 Inventory:");
+        if (inventoryItems.isEmpty()) {
+            System.out.println(" - Empty");
+        } else {
+            inventoryItems.forEach(item ->
+                    System.out.println(" - " + item.getItemName() + " x" + item.getQuantity()));
+        }
+
+        System.out.println("\n🛡️ Equipped Gear:");
+        if (equipmentList.isEmpty()) {
+            System.out.println(" - None");
+        } else {
+            equipmentList.forEach(equip -> System.out.println(" - " + equip.getName()));
+        }
+    }
+
+    public void showInventory() {
+        System.out.println("\n📦 Inventory:");
+        if (inventoryItems.isEmpty()) {
+            System.out.println(" - Empty");
+        } else {
+            inventoryItems.forEach(item ->
+                    System.out.println(" - " + item.getItemName() + " x" + item.getQuantity()));
+        }
+    }
+
+    public void addEquipment(Equipment equipment) {
+        equipment.setPlayer(this); // Associate the equipment with this player
+        equipmentList.add(equipment);
+    }
+
+    public List<Equipment> getEquipment() {
+        return new ArrayList<>(equipmentList); // ✅ Converts Set to List when needed
+    }
+
+    public void setEquipment(List<Equipment> equipment) {
+        this.equipmentList = new HashSet<>(equipment); // ✅ Convert List to Set
+    }
+
+
+    public void removeEquipment(Equipment equipment) {
+        if (equipmentList.remove(equipment)) {
+            System.out.println("\n🛡️ Removed equipment: " + equipment.getName());
+        } else {
+            System.out.println("\n❌ Equipment not found in your list.");
+        }
+    }
+
+    public int calculateXPForNextLevel() {
+        return (int) (100 * Math.pow(1.75, level - 1)); // ✅ Exponential XP scaling
+    }
+
+
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public int getLevel() {
+        return level;
+    }
+
+    public int getExperience() {
+        return experience;
+    }
+
+    public int getBaseHp() {
+        return baseHp;
+    }
+
+    public int getBaseMana() {
+        return baseMana;
+    }
+
+    public int getBaseAttackPower() {
+        return baseAttackPower;
+    }
+
+    public int getBaseDefense() {
+        return baseDefense;
+    }
+
+    public int getBaseSpeed() {
+        return baseSpeed;
+    }
+
+    public double getBaseCriticalRate() {
+        return baseCriticalRate;
+    }
+
+    public double getBaseCriticalMultiplier() {
+        return baseCriticalMultiplier;
+    }
+
+    public int getEnhancedSpeed() {
+        return enhancedSpeed;
+    }
+
+    public int getReceivedDamage() {
+        return receivedDamage;
+    }
+
+    public void setReceivedDamage(int receivedDamage) {
+        if(receivedDamage == 0){
+            this.receivedDamage = 0;
+        }
+        else{
+            this.receivedDamage += receivedDamage;
+        }
+
+    }
+    public GameClasses getGameClass() {
+        return gameClass;
+    }
+    public void setGameClass(GameClasses gameClass) {
+        this.gameClass = gameClass;
     }
 }

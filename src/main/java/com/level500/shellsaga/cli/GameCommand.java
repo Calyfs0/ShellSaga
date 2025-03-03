@@ -2,6 +2,8 @@ package com.level500.shellsaga.cli;
 
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+
 /*
 To make our CLI scalable, we’ll use the Command Pattern.
 🛠 Why This is Needed?
@@ -10,5 +12,5 @@ To make our CLI scalable, we’ll use the Command Pattern.
  */
 
 public interface GameCommand {
-    void execute();
+    void execute() throws IOException;
 }

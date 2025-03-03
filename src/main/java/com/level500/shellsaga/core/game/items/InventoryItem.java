@@ -17,6 +17,7 @@ public class InventoryItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Setter
     @ManyToOne(fetch=FetchType.LAZY)
     @JoinColumn(name="player_id", nullable=false)
     private Player player;
@@ -34,4 +35,9 @@ public class InventoryItem {
         this.itemName = itemName;
         this.quantity = quantity;
     }
+
+    @Getter
+    @Column(nullable = false)
+    private int sellPrice; // ✅ Store sell price in the database
+
 }

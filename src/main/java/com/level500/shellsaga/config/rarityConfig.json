@@ -1,0 +1,32 @@
+{
+  "Common": {
+    "multiplier": 1.0,
+    "upgradeChance": 0.10,
+    "nextTier": "Uncommon"
+  },
+  "Uncommon": {
+    "multiplier": 1.1,
+    "upgradeChance": 0.07,
+    "nextTier": "Rare"
+  },
+  "Rare": {
+    "multiplier": 1.2,
+    "upgradeChance": 0.05,
+    "nextTier": "Epic"
+  },
+  "Epic": {
+    "multiplier": 1.4,
+    "upgradeChance": 0.02,
+    "nextTier": "Legendary"
+  },
+  "Legendary": {
+    "multiplier": 1.6,
+    "upgradeChance": 0.01,
+    "nextTier": "Mythic"
+  },
+  "Mythic": {
+    "multiplier": 2.0,
+    "upgradeChance": 0.00,
+    "nextTier": "Mythic"
+  }
+}

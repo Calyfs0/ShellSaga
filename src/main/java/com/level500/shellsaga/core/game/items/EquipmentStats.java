@@ -20,18 +20,31 @@ public class EquipmentStats {
     private double manaReduction = 0; // ✅ Reduces mana cost %
     private double hpAbsorption = 0; // ✅ % of attack converted into HP
 
-    public EquipmentStats(int attack, int defense, double critChance, double critMultiplier, int speed) {
-        this.attack = attack;
-        this.defense = defense;
-        this.critRate = critChance;
-        this.critMultiplier = critMultiplier;
-        this.speed = speed;
-
-    }
 
     @Override
     public String toString() {
         return "ATK: " + attack + ", DEF: " + defense + ", CRIT: " +  String.format("%.2f",critRate) + "%, CRITMULTIPLIER: " + critMultiplier +
                 ", SPD: " + speed + ", HP Bonus: " + hpIncrease + ", MP Bonus: " + manaIncrease;
     }
+
+    public void applyUpgrade(EquipmentStats statsBoost) {
+        this.attack += statsBoost.attack;
+        this.defense += statsBoost.defense;
+        this.critRate += statsBoost.critRate;
+        this.critMultiplier += statsBoost.critMultiplier;
+        this.speed += statsBoost.speed;
+        this.hpIncrease += statsBoost.hpIncrease;
+        this.manaIncrease += statsBoost.manaIncrease;
+    }
+
+    public void boostWithCoreExploit(EquipmentStats statsBoost) {
+        this.attack += statsBoost.attack * 2; // ✅ Core Exploits double the upgrade effect
+        this.defense += statsBoost.defense * 2;
+        this.critRate += statsBoost.critRate * 2;
+        this.critMultiplier += statsBoost.critMultiplier * 2;
+        this.speed += statsBoost.speed * 2;
+        this.hpIncrease += statsBoost.hpIncrease * 2;
+        this.manaIncrease += statsBoost.manaIncrease * 2;
+    }
+
 }

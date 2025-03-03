@@ -13,6 +13,7 @@ import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 
+import java.io.IOException;
 import java.util.*;
 
 @Component
@@ -48,7 +49,7 @@ public class GameLoop {
     public Set<String> getRegisteredCommands() {
         return commandMap.keySet();
     }
-    public void start() {
+    public void start() throws IOException {
         logger.info("\n🎮 Welcome to ShellSaga!");
         logger.info("🔹 Type 'start' to begin, or 'help' for available commands.");
 

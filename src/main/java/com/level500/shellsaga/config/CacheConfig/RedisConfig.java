@@ -19,4 +19,13 @@ public class RedisConfig {
         template.setValueSerializer(new GenericJackson2JsonRedisSerializer()); // ✅ Serializes Player objects as JSON
         return template;
     }
+
+    @Bean
+    public RedisTemplate<String, Long> redisLongTemplate(RedisConnectionFactory connectionFactory) {
+        RedisTemplate<String, Long> template = new RedisTemplate<>();
+        template.setConnectionFactory(connectionFactory);
+        // Optionally set serializers
+        return template;
+    }
+
 }

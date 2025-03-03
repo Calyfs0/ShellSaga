@@ -1,15 +1,19 @@
 package com.level500.shellsaga.core.game.factories;
 
 import com.level500.shellsaga.core.game.characters.Enemy;
+import com.level500.shellsaga.core.game.entities.UpgradeMaterial;
 import com.level500.shellsaga.core.game.entities.enums.EquipmentSlot;
+import com.level500.shellsaga.core.game.entities.enums.UpgradeType;
 import com.level500.shellsaga.core.game.items.Equipment;
 import com.level500.shellsaga.core.game.items.EquipmentStats;
 import com.level500.shellsaga.core.game.locations.Area;
 import com.level500.shellsaga.infrastructure.database.EnemyRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.level500.shellsaga.infrastructure.database.EquipmentRepository;
+import com.level500.shellsaga.infrastructure.database.UpgradeMaterialRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
@@ -17,11 +21,15 @@ import java.util.Random;
 @Component
 public class EnemyFactory {
     private final EnemyRepository enemyRepository;
+    private final EquipmentRepository equipmentRepository;
+    private final UpgradeMaterialRepository upgradeMaterialRepository;
     private final Random random = new Random();
-    private static final Logger logger = LoggerFactory.getLogger(EnemyFactory.class);
 
-    public EnemyFactory(EnemyRepository enemyRepository) {
+    @Autowired
+    public EnemyFactory(EnemyRepository enemyRepository,EquipmentRepository equipmentRepository, UpgradeMaterialRepository upgradeMaterialRepository) {
         this.enemyRepository = enemyRepository;
+        this.equipmentRepository = equipmentRepository;
+        this.upgradeMaterialRepository = upgradeMaterialRepository;
     }
 
     public Enemy createEnemy(Area area, int playerLevel) {
@@ -31,99 +39,118 @@ public class EnemyFactory {
             return getFallbackEnemy(area, playerLevel);
         }
 
-        Enemy enemy = possibleEnemies.get(random.nextInt(possibleEnemies.size())); // ✅ Random selection from database
+        // Select a random enemy from database
+        Enemy baseEnemy = possibleEnemies.get(random.nextInt(possibleEnemies.size()));
 
-        // ✅ 10% chance to make enemy rare
-        boolean isRare = random.nextDouble() < 0.10;
-        enemy.setRare(isRare);
+        // 10% chance to spawn a rare enemy
+        boolean isRare = random.nextInt(10) == 0;
+        int xpReward = baseEnemy.getLevel() * 10; // XP scales with level
+        int goldReward = baseEnemy.getLevel() * 5; // Gold scales with level
 
-        // ✅ If rare, multiply HP by 3
-        if (isRare) {
-            enemy.setHp(enemy.getHp() * 3);
-            logger.info("🔥 A Rare " + getEnemyDisplayName(enemy) + " has appeared! (3x HP)");
-        }
-
-        return enemy;
-
-    }
-
-    private Enemy getFallbackEnemy(Area area, int playerLevel) {
-        Optional<Enemy> fallback = enemyRepository.findByLevelGreaterThanEqual(playerLevel);
-        return fallback.orElseGet(() -> new Enemy(null, "Mysterious Shadow", playerLevel, 100, 15, 5, 4,false, area));
-    }
-
-    private String getEnemyDisplayName(Enemy enemy) {
-        String RESET_COLOR = "\033[0m";  // Reset text color to default
-        String RARE_COLOR = "\033[31m";  // Red color for rare enemies
-
-        return RARE_COLOR + enemy.getName() + RESET_COLOR; // 🔥 Red text for rare enemies
-    }
-
-    public Equipment generateEquipmentDrop(Enemy enemy) {
-//        if(enemy.getLevel() > 10 && enemy.isRare()){
-//            return generateRareEquipment(enemy);
-//        }
-//        else {
-//            return generateCommonEquipment(enemy);
-//        }
-//
-
-        return getEquipment(enemy);
-    }
-
-    private Equipment getEquipment(Enemy enemy) {
-        EquipmentSlot slot = getRandomEquipmentSlot();
-        String itemName = generateItemName(slot, enemy.isRare()); // ✅ Use enum-based name generation
-        String restrictedClass = assignClassRestriction(slot); // ✅ Assign class restrictions
-
-        EquipmentStats stats = generateEquipmentStats(enemy, enemy.isRare()); // ✅ Adjust stats for rare items
-        int priceMultiplier = enemy.isRare() ? 3 : 1; // ✅ Rare items have double price
-        double price = enemy.getLevel() *priceMultiplier * 10; // ✅ Random price
-        return new Equipment(itemName, enemy.getLevel(), slot, restrictedClass, stats, false, price);
-    }
-
-    private EquipmentSlot getRandomEquipmentSlot() {
-        EquipmentSlot[] slots = EquipmentSlot.values();
-        return slots[random.nextInt(slots.length)]; // ✅ Randomly select an equipment slot
-    }
-
-    private String generateItemName(EquipmentSlot slot, boolean isRare) {
-        String prefix = isRare ? "Ancient " : "Iron "; // ✅ Rare items have a special prefix
-
-        return switch (slot) {
-            case WEAPON -> prefix + "Weapon";
-            case HELMET -> prefix + "Helmet";
-            case ARMOR -> prefix + "Armor";
-            case SHOULDERS -> prefix + "Shoulder Guards";
-            case PANTS -> prefix + "Leggings";
-            case BOOTS -> prefix + "Boots";
-        };
-    }
-
-    private EquipmentStats generateEquipmentStats(Enemy enemy, boolean isRare) {
-        double multiplier = isRare ? 2.0 : 1.0; // ✅ Rare items have double stats
-
-        return new EquipmentStats(
-                (int) (enemy.getAttackPower() / 2 * multiplier),
-                (int) (enemy.getDefense() / 2 * multiplier),
-                Math.random() * 10,
-                isRare ? 2.0 : 1.5, // ✅ Rare items have higher crit multipliers
-                (int) (enemy.getSpeed() / 2 * multiplier),
-                (int) (enemy.getHp() / 5 * multiplier),
-                (int) (enemy.getHp() / 5 * multiplier),
-                isRare ? 0.2 : 0.1, // ✅ Rare items have better mana reduction
-                isRare ? 0.1 : 0.05  // ✅ Rare items have better HP absorption
+        return new Enemy(
+                null, // No ID, let the database handle it
+                baseEnemy.getName(),
+                baseEnemy.getLevel(),
+                baseEnemy.getHp() * (isRare ? 3 : 1), // Rare enemies have 3x HP
+                baseEnemy.getAttackPower(),
+                baseEnemy.getDefense(),
+                baseEnemy.getSpeed(),
+                isRare,
+                area,
+                xpReward,
+                goldReward
         );
     }
 
-    private String assignClassRestriction(EquipmentSlot slot) {
-        return (slot == EquipmentSlot.WEAPON) ? getRandomClassRestriction() : null; // ✅ Only restrict weapons
+    private Enemy getFallbackEnemy(Area area, int playerLevel) {
+        return new Enemy(
+                null,
+                "Mysterious Shadow",
+                playerLevel,
+                100,
+                15,
+                5,
+                4,
+                false,
+                area,
+                playerLevel * 10, // XP Reward
+                playerLevel * 5  // Gold Reward
+        );
     }
 
-    private String getRandomClassRestriction() {
-        String[] classes = {"ARCHER"}; // ✅ Define playable classes
-        return classes[random.nextInt(classes.length)]; // ✅ Randomly assign a restriction
+//    public Optional<Equipment> generateEquipmentDrop(Enemy enemy) {
+//        double dropChance = Math.random();
+//        EquipmentSlot[] equipmentSlots = EquipmentSlot.values();
+//        Random random = new Random();
+//        int randomSlot = random.nextInt(equipmentSlots.length);
+//        EquipmentSlot generateSlot = equipmentSlots[randomSlot];
+//        if (dropChance > 0.8) { // 20% drop chance
+//            Equipment droppedEquipment = Equipment.builder()
+//                    .name("Hacked Blade")
+//                    .itemLevel(enemy.getLevel())
+//                    .slot(generateSlot)
+//                    .restrictedClass(null) // Any class can equip
+//                    .isEquipped(false)
+//                    .price(0.2) // Drop rate? (We might not need this)
+//                    .player(null)
+//                    .rarity("Rare")// No player assigned initially
+//                    .stats(generateEquipmentStats(enemy.getLevel(), generateSlot)) // ✅ Fetch stats dynamically
+//                    .build();
+//
+//            return Optional.of(droppedEquipment);
+//        }
+//        return Optional.empty();
+//    }
+
+//    private EquipmentStats generateEquipmentStats(int level, EquipmentSlot slot) {
+//        return new EquipmentStats(
+//                10 * (int)(1 + level * 0.05),
+//                5 + (level * 2),
+//                Math.min(0.05 + (level * 0.002), 1.0),
+//                1.5 + (level * 0.05),
+//                1 + (level / (level + 20)),
+//                100 + (level * 15),
+//                50 + (level * 10),
+//                0,
+//                0);
+//    }
+
+//    private EquipmentStats fetchEquipmentStats(int level, EquipmentSlot slot) {
+//        return equipmentRepository.findStatsByItemLevelAndSlot(level, slot)
+//                .orElse(new EquipmentStats(
+//                        10 * (int)(1 + level * 0.05),
+//                        5 + (level * 2), Math.min(0.05 + (level * 0.002), 1.0),
+//                        1.5 + (level * 0.05),
+//                        1 + (level / (level + 20)),
+//                        100 + (level * 15),
+//                        50 + (level * 10),
+//                        0,
+//                        0)); // ✅ Fallback default stats
+//    }
+
+    public Optional<UpgradeMaterial> generateUpgradeDrop(Enemy enemy) {
+        double dropChance = Math.random();
+
+//        // ✅ Normal enemies drop COMMON materials (50% chance)
+//        if (dropChance > 0.5) {
+//            return upgradeMaterialRepository.findRandomByEnemyLevel(enemy.getLevel());
+//        }
+//
+//        // ✅ Rare enemies drop RARE materials (30% chance)
+//        if (enemy.isRare() && dropChance > 0.3) {
+//            return upgradeMaterialRepository.findRareUpgradeMaterial(UpgradeType.RARE, enemy.getLevel());
+//
+//        }
+
+        return Optional.empty();
     }
+
+
+//    public Optional<UpgradeMaterial> generateFinalBossDrop(Enemy boss) {
+//        return upgradeMaterialRepository.findCoreExploitForLevel(UpgradeType.CORE_EXPLOIT, boss.getLevel());
+//
+//    }
+
 
 
 }
